@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calliope mini WebUSB Flasher</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔌</text></svg>">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔌 Calliope mini WebUSB Flasher</h1>
+            <p class="subtitle">Flash hex files directly to your Calliope mini using WebUSB</p>
+        </header>
+
+        <main>
+            <!-- File Upload Section -->
+            <section class="upload-section">
+                <div class="file-input-wrapper">
+                    <input type="file" id="hexFile" accept=".hex" style="display: none;">
+                    <div id="dropZone" class="drop-zone">
+                        <svg class="upload-icon" viewBox="0 0 24 24" width="48" height="48">
+                            <path fill="currentColor" d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z"/>
+                        </svg>
+                        <p class="drop-text">Drop HEX file here or <button type="button" id="selectFile" class="link-button">select file</button></p>
+                        <p class="file-info" id="fileInfo"></p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Device Connection Section -->
+            <section class="device-section">
+                <div class="device-status">
+                    <div class="status-row">
+                        <span class="label">Device:</span>
+                        <span id="deviceStatus" class="value">Not connected</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="label">Firmware:</span>
+                        <span id="firmwareVersion" class="value">-</span>
+                    </div>
+                </div>
+                <button type="button" id="connectBtn" class="btn btn-primary">
+                    <svg class="btn-icon" viewBox="0 0 24 24" width="20" height="20">
+                        <path fill="currentColor" d="M4,1C2.89,1 2,1.89 2,3V7C2,8.11 2.89,9 4,9H1V11H13V9H10C11.11,9 12,8.11 12,7V3C12,1.89 11.11,1 10,1H4M4,3H10V7H4V3M14,13C12.89,13 12,13.89 12,15V19C12,20.11 12.89,21 14,21H11V23H23V21H20C21.11,21 22,20.11 22,19V15C22,13.89 21.11,13 20,13H14M14,15H20V19H14V15Z"/>
+                    </svg>
+                    Connect Device
+                </button>
+            </section>
+
+            <!-- Flash Progress Section -->
+            <section class="progress-section">
+                <div class="progress-bar-container">
+                    <div id="progressBar" class="progress-bar">
+                        <div class="progress-fill"></div>
+                    </div>
+                    <div class="progress-text">
+                        <span id="progressPercent">0%</span>
+                        <span id="progressStatus"></span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Flash Button Section -->
+            <section class="action-section">
+                <button type="button" id="flashBtn" class="btn btn-flash" disabled>
+                    <svg class="btn-icon" viewBox="0 0 24 24" width="24" height="24">
+                        <path fill="currentColor" d="M7,2V13H10V22L17,10H13L17,2H7Z"/>
+                    </svg>
+                    Flash Device
+                </button>
+                <button type="button" id="cancelBtn" class="btn btn-secondary" style="display: none;">
+                    Cancel
+                </button>
+            </section>
+
+            <!-- Status Messages -->
+            <section class="status-section">
+                <div id="statusMessage" class="status-message"></div>
+                <div id="errorMessage" class="error-message"></div>
+            </section>
+
+            <!-- Flash Mode Selection -->
+            <section class="options-section">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="partialFlash" checked>
+                    <span>Use partial flash (faster, only changed pages)</span>
+                </label>
+                <label class="checkbox-label">
+                    <input type="checkbox" id="verifyFlash">
+                    <span>Verify after flashing</span>
+                </label>
+            </section>
+        </main>
+
+        <footer>
+            <p class="help-text">
+                <strong>Browser Support:</strong> Chrome 61+, Edge 79+, Opera 48+
+                <br>
+                <strong>Note:</strong> WebUSB requires HTTPS (except localhost)
+            </p>
+            <details class="troubleshooting">
+                <summary>Troubleshooting</summary>
+                <ul>
+                    <li>Make sure your Calliope mini is connected via USB</li>
+                    <li>Firmware version 0249 or higher is required</li>
+                    <li>Try a different USB cable if connection fails</li>
+                    <li>On Windows, install the device driver if needed</li>
+                    <li>Close other programs that might use the device (e.g., Arduino IDE)</li>
+                </ul>
+            </details>
+        </footer>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/utils.js"></script>
+    <script src="js/hex-parser.js"></script>
+    <script src="js/uf2.js"></script>
+    <script src="js/webusb.js"></script>
+    <script src="js/flash.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>
