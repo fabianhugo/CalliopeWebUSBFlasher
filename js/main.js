@@ -3,6 +3,7 @@
 let hexFileContent = null;
 let flashController = null;
 let isFlashing = false;
+let autoFlashEnabled = false;
 
 // UI Elements
 let elements = {};
@@ -40,15 +41,21 @@ document.addEventListener('DOMContentLoaded', () => {
         statusMessage: document.getElementById('statusMessage'),
         errorMessage: document.getElementById('errorMessage'),
         partialFlash: document.getElementById('partialFlash'),
-        verifyFlash: document.getElementById('verifyFlash')
+        verifyFlash: document.getElementById('verifyFlash'),
+        autoFlash: document.getElementById('autoFlash')
     };
 
     // Initialize WebUSB
     usbDevice = initWebUSB();
     usbDevice.onConnectionChanged = onConnectionChanged;
+    usbDevice.onDeviceAppeared = onDeviceAppeared;
 
     // Setup event listeners
     setupEventListeners();
+    autoFlashEnabled = elements.autoFlash.checked;
+
+    // Auto-connect to any already-authorized Calliope mini
+    autoConnectExistingDevices();
 
     log('Initialization complete');
 });
@@ -119,6 +126,12 @@ function setupEventListeners() {
 
     // Cancel button
     elements.cancelBtn.addEventListener('click', cancelFlash);
+
+    // Auto-flash toggle
+    elements.autoFlash.addEventListener('change', () => {
+        autoFlashEnabled = elements.autoFlash.checked;
+        log(`Auto-flash mode: ${autoFlashEnabled ? 'enabled' : 'disabled'}`);
+    });
 }
 
 /**
@@ -236,7 +249,8 @@ async function startFlash() {
         const result = await flashController.flash(hexFileContent, options);
 
         updateProgress(100, 'Flash complete!');
-        showStatus(`✓ Device flashed successfully using ${result.method} flash`);
+        const hint = autoFlashEnabled ? ' Unplug and reconnect next device to flash again.' : '';
+        showStatus(`✓ Device flashed successfully using ${result.method} flash${hint}`);
 
         log('Flash completed successfully');
 
@@ -339,4 +353,56 @@ function disableUI() {
     elements.flashBtn.disabled = true;
     elements.dropZone.style.opacity = '0.5';
     elements.dropZone.style.pointerEvents = 'none';
+}
+
+/**
+ * Called automatically when a known USB device is plugged in.
+ * Connects and optionally starts flashing without any user interaction.
+ */
+async function onDeviceAppeared(device) {
+    if (isFlashing) return;
+    hideMessages();
+    try {
+        showStatus('Calliope mini detected — connecting automatically...');
+        await usbDevice.connectToDevice(device);
+
+        const info = usbDevice.getDeviceInfo();
+        elements.deviceStatus.textContent = info.product;
+        elements.deviceStatus.classList.add('connected');
+
+        flashController = createFlashController(usbDevice);
+        elements.firmwareVersion.textContent = 'Ready';
+        updateFlashButton();
+
+        if (autoFlashEnabled && hexFileContent) {
+            showStatus('Auto-flash: starting...');
+            await startFlash();
+        } else if (autoFlashEnabled && !hexFileContent) {
+            showStatus('Device connected. Load a HEX file to enable auto-flash.');
+        } else {
+            showStatus('Device connected automatically. Click "Flash Device" to flash.');
+        }
+    } catch (error) {
+        showError(`Auto-connect failed: ${error.message}`);
+        log(`Auto-connect error: ${error.message}`);
+    }
+}
+
+/**
+ * Scan for already-authorized Calliope mini devices on page load.
+ * These were authorized in a previous browser session and need no user gesture.
+ */
+async function autoConnectExistingDevices() {
+    try {
+        const devices = await navigator.usb.getDevices();
+        for (const device of devices) {
+            if (usbDevice.isMatchingDevice(device) && !usbDevice.isConnected()) {
+                log('Found previously authorized Calliope mini, auto-connecting...');
+                await usbDevice.onDeviceAppeared(device);
+                break;
+            }
+        }
+    } catch (error) {
+        log(`Auto-connect scan failed: ${error.message}`);
+    }
 }

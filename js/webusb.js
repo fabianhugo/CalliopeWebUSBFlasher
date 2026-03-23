@@ -18,6 +18,7 @@ class WebUSBDevice {
         this.endpoint = { in: null, out: null };
         this.connected = false;
         this.onConnectionChanged = null;
+        this.onDeviceAppeared = null;
     }
 
     /**
@@ -315,6 +316,25 @@ class WebUSBDevice {
     isConnected() {
         return this.connected && this.device !== null;
     }
+
+    /**
+     * Check if a raw USBDevice matches the Calliope mini filters
+     */
+    isMatchingDevice(device) {
+        return USB_FILTERS.some(f =>
+            f.vendorId === device.vendorId &&
+            (!f.productId || f.productId === device.productId)
+        );
+    }
+
+    /**
+     * Connect to an already-selected device (no user picker needed).
+     * Used for auto-connect on USB plug-in events.
+     */
+    async connectToDevice(device) {
+        this.device = device;
+        return this.connect();
+    }
 }
 
 // Global WebUSB device instance
@@ -325,6 +345,27 @@ let usbDevice = null;
  */
 function initWebUSB() {
     usbDevice = new WebUSBDevice();
+
+    if ('usb' in navigator) {
+        // Auto-connect when a previously-authorized device is plugged in
+        navigator.usb.addEventListener('connect', async (event) => {
+            if (usbDevice.isConnected()) return;
+            if (!usbDevice.isMatchingDevice(event.device)) return;
+            log('USB connect event: matched Calliope mini');
+            if (usbDevice.onDeviceAppeared) {
+                await usbDevice.onDeviceAppeared(event.device);
+            }
+        });
+
+        // Handle physical removal of the device
+        navigator.usb.addEventListener('disconnect', async (event) => {
+            if (usbDevice.device === event.device) {
+                log('USB disconnect event: device removed');
+                await usbDevice.disconnect();
+            }
+        });
+    }
+
     return usbDevice;
 }
 
