@@ -120,6 +120,76 @@ function parseIntelHex(hexContent) {
 }
 
 /**
+ * Extract page-aligned blocks from parsed HEX blocks.
+ * Returns one block of exactly pageSize bytes per page that contains data;
+ * gaps within a page are filled with 0xFF.
+ */
+function extractPageAlignedBlocks(hexBlocks, pageSize) {
+    const pages = new Map();
+
+    for (const block of hexBlocks) {
+        let offset = 0;
+        while (offset < block.data.length) {
+            const addr = block.address + offset;
+            const pageNum = Math.floor(addr / pageSize);
+            const pageOffset = addr % pageSize;
+
+            if (!pages.has(pageNum)) {
+                pages.set(pageNum, new Uint8Array(pageSize).fill(0xFF));
+            }
+
+            const page = pages.get(pageNum);
+            const bytesInPage = Math.min(block.data.length - offset, pageSize - pageOffset);
+            for (let i = 0; i < bytesInPage; i++) {
+                page[pageOffset + i] = block.data[offset + i];
+            }
+            offset += bytesInPage;
+        }
+    }
+
+    return [...pages.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([pageNum, data]) => ({ address: pageNum * pageSize, data }));
+}
+
+/**
+ * Serialize an array of {address, data} blocks to Intel HEX text.
+ */
+function generateIntelHex(blocks) {
+    function hexByte(b) { return b.toString(16).padStart(2, '0').toUpperCase(); }
+    function record(type, addr16, data) {
+        const bytes = [data.length, (addr16 >> 8) & 0xFF, addr16 & 0xFF, type, ...data];
+        let sum = bytes.reduce((a, b) => a + b, 0);
+        bytes.push(((~sum) + 1) & 0xFF);
+        return ':' + bytes.map(hexByte).join('');
+    }
+
+    const lines = [];
+    let currentBase = null;
+
+    for (const block of blocks) {
+        const base = block.address & 0xFFFF0000;
+        if (base !== currentBase) {
+            currentBase = base;
+            const high = base >>> 16;
+            lines.push(record(0x04, 0, [(high >> 8) & 0xFF, high & 0xFF]));
+        }
+
+        const addr16 = block.address & 0xFFFF;
+        const data = block.data instanceof Uint8Array ? Array.from(block.data) : block.data;
+        let offset = 0;
+        while (offset < data.length) {
+            const chunk = data.slice(offset, Math.min(data.length, offset + 16));
+            lines.push(record(0x00, (addr16 + offset) & 0xFFFF, chunk));
+            offset += 16;
+        }
+    }
+
+    lines.push(':00000001FF');
+    return lines.join('\n');
+}
+
+/**
  * Validate HEX file content
  */
 function validateHexFile(hexContent) {

@@ -170,6 +170,27 @@ class WebUSBDevice {
     }
 
     /**
+     * Full close → 500 ms delay → reopen, mirroring MakeCode's reconnectAsync.
+     * Cancels all pending USB transfers and resets the CMSIS-DAP session.
+     */
+    async reconnect() {
+        log('Reconnecting USB device (close → wait → open)...');
+        try {
+            if (this.device) await this.device.close();
+        } catch (e) { /* ignore */ }
+        await delay(500);
+        try {
+            await this.device.open();
+            await this.device.selectConfiguration(1);
+            await this.device.claimInterface(this.interface.interfaceNumber);
+            log('USB device reconnected successfully');
+        } catch (e) {
+            log(`Reconnect error: ${e.message}`);
+            throw e;
+        }
+    }
+
+    /**
      * Disconnect from device
      */
     async disconnect() {
@@ -240,7 +261,12 @@ class WebUSBDevice {
     }
 
     /**
-     * Receive packet from device
+     * Receive packet from device.
+     *
+     * Mirrors MakeCode's recvPacketAsync: one transferIn per call, no retry
+     * loop.  Multiple concurrent transferIn calls poison the USB queue because
+     * each abandoned promise still occupies a slot and consumes the next device
+     * response.  We issue exactly one transfer and wait for it.
      */
     async receivePacket(timeout = 5000) {
         if (!this.connected) {
@@ -248,51 +274,36 @@ class WebUSBDevice {
         }
 
         const startTime = Date.now();
-        let attempts = 0;
-        let lastError = null;
 
-        while (Date.now() - startTime < timeout) {
-            try {
-                attempts++;
-                let result;
-                
-                if (this.endpoint.in) {
-                    // Use bulk transfer
-                    result = await this.device.transferIn(this.endpoint.in, 64);
-                } else {
-                    // Use control transfer
-                    result = await this.device.controlTransferIn({
-                        requestType: 'class',
-                        recipient: 'interface',
-                        request: 0x01, // GET_REPORT
-                        value: 0x100,  // HID input report
-                        index: this.interface.interfaceNumber
-                    }, 64);
-                }
+        while (true) {
+            let result;
+            if (this.endpoint.in) {
+                result = await this.device.transferIn(this.endpoint.in, 64);
+            } else {
+                result = await this.device.controlTransferIn({
+                    requestType: 'class',
+                    recipient: 'interface',
+                    request: 0x01, // GET_REPORT
+                    value: 0x100,  // HID input report
+                    index: this.interface.interfaceNumber
+                }, 64);
+            }
 
-                if (result.status !== 'ok') {
-                    lastError = `Receive failed: ${result.status}`;
-                    await delay(10);
-                    continue;
-                }
+            if (result.status !== 'ok') {
+                throw new Error(`USB IN transfer failed: ${result.status}`);
+            }
 
-                const data = new Uint8Array(result.data.buffer);
-                if (data.length > 0 && data[0] !== 0) {
-                    log(`Received packet after ${attempts} attempts (${Date.now() - startTime}ms): [${Array.from(data.slice(0, 8)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}...]`);
-                    return data;
-                }
-                
-                // No data yet, wait a bit
-                await delay(10);
-            } catch (error) {
-                lastError = error.message;
-                log(`Receive error on attempt ${attempts}: ${error.message}`);
-                await delay(10);
+            const data = new Uint8Array(result.data.buffer);
+            if (data.length > 0) {
+                log(`Received packet (${Date.now() - startTime}ms): [${Array.from(data.slice(0, 8)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(', ')}...]`);
+                return data;
+            }
+
+            // Empty packet — check elapsed time before looping (mirrors MakeCode)
+            if (timeout > 0 && Date.now() - startTime >= timeout) {
+                throw new Error('USB IN timed out');
             }
         }
-
-        log(`Receive timeout after ${attempts} attempts (${timeout}ms). Last error: ${lastError || 'none'}`);
-        throw new Error('Receive timeout');
     }
 
     /**

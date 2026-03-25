@@ -78,9 +78,10 @@ class FlashController {
     /**
      * Full flash using DAPLink vendor commands
      * Flashes the complete HEX file
+     * mode: 0x01 = full replace, 0x02 = partial (only write specified pages)
      */
-    async fullFlash(hexContent, progressCallback) {
-        log('Starting full flash...');
+    async fullFlash(hexContent, progressCallback, mode = 0x01) {
+        log(`Starting ${mode === 0x02 ? 'partial' : 'full'} flash (DAPLink mode 0x${mode.toString(16)})...`);
         this.aborted = false;
         
         if (progressCallback) {
@@ -90,7 +91,7 @@ class FlashController {
         try {
             // Open flash session
             log('Opening flash session...');
-            const openResponse = await this.sendDAPCommand(DAPLinkFlash.OPEN, 1);
+            const openResponse = await this.sendDAPCommand(DAPLinkFlash.OPEN, mode);
             log(`OPEN response: cmd=0x${openResponse[0].toString(16)}, status=0x${openResponse[1].toString(16)}`);
             
             // Status byte: 0x00 = success, 0x01 = fail, 0x02 = maybe already open?
@@ -150,8 +151,8 @@ class FlashController {
             log('Resetting device...');
             await this.sendDAPCommand(DAPLinkFlash.RESET);
 
-            log('Full flash completed successfully');
-            return { success: true, method: 'full' };
+            log('Flash completed successfully');
+            return { success: true, method: mode === 0x02 ? 'partial' : 'full' };
 
         } catch (error) {
             log(`Full flash error: ${error.message}`);
@@ -168,38 +169,86 @@ class FlashController {
     }
 
     /**
-     * Partial flash using checksums (quick flash)
-     * Only flashes changed pages
+     * Partial flash — MakeCode-style using dapjs (mirrors reflashAsync in flash.ts).
+     *
+     * Algorithm:
+     *   1. Init DAPFlasher: clear USB pipeline, cortexM.init, reset(halt), read FICR.
+     *   2. Parse HEX into page-aligned blocks using the device page size.
+     *   3. Read UICR; if code-region is locked fall back to full flash.
+     *   4. Run computeChecksums2 ARM blob on device to hash all flash pages.
+     *   5. Compare murmur3 hashes; keep only changed pages.
+     *   6. If ≥ half the pages changed: full flash.  Otherwise: quick-flash changed pages.
      */
     async partialFlash(hexContent, progressCallback) {
-        log('Starting partial flash...');
+        log('Starting partial flash (dapjs / MakeCode-style)...');
         this.aborted = false;
-        
-        if (progressCallback) {
-            this.onProgress = progressCallback;
-        }
+        if (progressCallback) this.onProgress = progressCallback;
+
+        const flasher = new DAPFlasher(this.usb);
 
         try {
-            // Convert HEX to UF2 blocks
-            const uf2Data = convertHexToUF2(hexContent);
-            const blocks = uf2Data.blocks;
-            
-            log(`Total UF2 blocks: ${blocks.length}`);
+            // 1. Connect, halt, read FICR page size
+            if (this.onProgress) this.onProgress(2, 'Connecting debug interface...');
+            await flasher.init();
 
-            // Align blocks to page boundaries
-            const alignedBlocks = pageAlignBlocks(blocks, PAGE_SIZE);
-            log(`Aligned blocks: ${alignedBlocks.length}`);
+            // 2. Parse HEX using device page size (known after init)
+            const hexBlocks = parseIntelHex(hexContent);
+            const newPages  = extractPageAlignedBlocks(hexBlocks, flasher.pageSize);
+            log(`New firmware: ${newPages.length} page(s) × ${flasher.pageSize} B`);
 
-            // TODO: Get device checksums and compare
-            // For now, just flash all aligned blocks
-            
-            // Use full flash for now since checksum reading requires
-            // more complex DAP memory access (not implemented in simplified version)
-            log('Checksum comparison not implemented, falling back to full flash');
-            return await this.fullFlash(hexContent, progressCallback);
+            if (newPages.length === 0) throw new Error('HEX file contains no flash data');
+
+            // 3. UICR check — 0x00 and 0xFF both safe (erased/unset)
+            const uicr = await flasher.readUICR();
+            if (uicr !== 0x00 && uicr !== 0xFF) {
+                log('UICR protected — falling back to full flash');
+                await flasher._cortexM.reset(false);
+                return await this.fullFlash(hexContent, progressCallback);
+            }
+
+            // 4. Compute checksums of all flash pages on the device
+            if (this.onProgress) this.onProgress(5, 'Computing device checksums...');
+            const checksums = await flasher.getFlashChecksums();
+
+            // 5. Filter to changed pages only
+            const changedPages = onlyChangedPages(newPages, checksums, flasher.pageSize);
+            const threshold    = (newPages.length / 2) | 0;
+            log(`Pages: ${changedPages.length} changed / ${newPages.length} total (threshold: ${threshold})`);
+
+            if (changedPages.length === 0) {
+                log('Device already up-to-date');
+                await flasher._cortexM.reset(false);
+                if (this.onProgress) this.onProgress(100, 'Already up-to-date');
+                return { success: true, method: 'partial', pagesChanged: 0, pagesTotal: newPages.length };
+            }
+
+            // MakeCode heuristic: ≥ half changed → full flash is faster
+            if (changedPages.length > threshold) {
+                log('More than half pages changed — falling back to full flash');
+                await flasher._cortexM.reset(false);
+                return await this.fullFlash(hexContent, progressCallback);
+            }
+
+            // 6. Quick-flash only the changed pages (resets device when done)
+            log(`Quick flash: writing ${changedPages.length} page(s)...`);
+            if (this.onProgress) this.onProgress(10, `Writing ${changedPages.length} changed page(s)...`);
+
+            await flasher.quickFlashPages(changedPages, (frac) => {
+                if (this.onProgress) {
+                    this.onProgress(
+                        10 + frac * 85,
+                        `Flashed ${Math.round(frac * changedPages.length)}/${changedPages.length} pages`
+                    );
+                }
+            });
+
+            if (this.onProgress) this.onProgress(100, 'Done');
+            return { success: true, method: 'partial', pagesChanged: changedPages.length, pagesTotal: newPages.length };
 
         } catch (error) {
             log(`Partial flash error: ${error.message}`);
+            console.error(error);
+            try { await flasher._cortexM.reset(false); } catch (_) {}
             throw error;
         }
     }
