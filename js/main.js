@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Check browser compatibility
     const compat = checkBrowserCompatibility();
     if (!compat.supported) {
-        showError(`Browser not supported: ${compat.reason}`);
+        showError(t('browserNotSupported') + compat.reason);
         disableUI();
         return;
     }
@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadStartProgramBtn: document.getElementById('loadStartProgramBtn'),
         hexLabel: document.getElementById('hexToFlashLabel'),
         connectBtn: document.getElementById('connectBtn'),
+        connectBtnText: document.querySelector('#connectBtn span[data-i18n]'),
         flashBtn: document.getElementById('flashBtn'),
         cancelBtn: document.getElementById('cancelBtn'),
         deviceStatus: document.getElementById('deviceStatus'),
@@ -130,26 +131,25 @@ function setupEventListeners() {
 async function loadHexFile(file) {
     hideMessages();
     if (!file.name.endsWith('.hex')) {
-        showError('Please select a .hex file');
+        showError(t('pleaseSelectHex'));
         return;
     }
     try {
-        showStatus('Loading HEX file...');
+        showStatus(t('loadingHexFile'));
         const text = await file.text();
         const validation = validateHexFile(text);
         if (!validation.valid) {
-            showError(`Invalid HEX file: ${validation.error}`);
+            showError(t('invalidHexFile') + validation.error);
             return;
         }
         hexFileContent = text;
         hexIsStartProgram = false;
-        const info = getHexFileInfo(text);
-        elements.hexLabel.textContent = `${file.name} — ${formatBytes(info.totalSize)}, ${info.blocks} blocks`;
-        showStatus('HEX file loaded successfully');
+        elements.hexLabel.textContent = file.name;
+        showStatus(t('hexFileLoaded'));
         updateFlashButton();
         log(`Loaded ${file.name}: ${formatBytes(info.totalSize)}`);
     } catch (error) {
-        showError(`Failed to load file: ${error.message}`);
+        showError(t('failedToLoadFile') + error.message);
         log(`File load error: ${error.message}`);
     }
 }
@@ -164,7 +164,7 @@ async function loadHexForDevice() {
     if (!path) return;
 
     try {
-        showStatus(`Loading start program (${path.split('/').pop()})...`);
+        showStatus(`${t('loadingStartProgram')} (${path.split('/').pop()})...`);
         const response = await fetch(path);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const text = await response.text();
@@ -183,7 +183,7 @@ async function loadHexForDevice() {
         updateFlashButton();
 
     } catch (error) {
-        showError(`Failed to load start program: ${error.message}`);
+        showError(t('failedToLoadStartProgram') + error.message);
         log(`Start program load error: ${error.message}`);
     }
 }
@@ -196,41 +196,41 @@ async function connectDevice() {
 
     try {
         elements.connectBtn.disabled = true;
-        showStatus('Requesting device access...');
+        showStatus(t('requestingDeviceAccess'));
 
         const selected = await usbDevice.requestDevice();
         if (!selected) {
-            showStatus('Device selection cancelled');
+            showStatus(t('deviceSelectionCancelled'));
             elements.connectBtn.disabled = false;
             return;
         }
 
-        showStatus('Connecting to device...');
+        showStatus(t('connectingToDevice'));
         await usbDevice.connect();
 
         const info = usbDevice.getDeviceInfo();
-        elements.deviceStatus.textContent = `${info.product}`;
+        elements.deviceStatus.removeAttribute('data-i18n');
+        elements.deviceStatus.textContent = info.product;
         elements.deviceStatus.classList.add('connected');
 
-        // Get firmware version
         flashController = createFlashController(usbDevice);
 
-        // Skip version check - it can interfere with subsequent commands
-        elements.firmwareVersion.textContent = 'Ready';
+        elements.firmwareVersion.dataset.i18n = 'ready';
+        elements.firmwareVersion.textContent = t('ready');
         log('Device ready for flashing');
 
         updatePartialFlashUI();
         if (hexIsStartProgram) await loadHexForDevice();
 
         if (autoFlashEnabled && hexFileContent) {
-            showStatus('Auto-flash: starting...');
+            showStatus(t('autoFlashStarting'));
             await startFlash();
         } else {
-            showStatus('Device connected. Ready to flash.');
+            showStatus(t('deviceReady'));
         }
 
     } catch (error) {
-        showError(`Connection failed: ${error.message}`);
+        showError(t('connectionFailed') + error.message);
         log(`Connection error: ${error.message}`);
         elements.connectBtn.disabled = false;
     }
@@ -241,7 +241,7 @@ async function connectDevice() {
  */
 async function startFlash() {
     if (!hexFileContent || !usbDevice.isConnected()) {
-        showError('Please load a HEX file and connect a device first');
+        showError(t('pleaseLoadHexAndConnect'));
         return;
     }
 
@@ -253,8 +253,8 @@ async function startFlash() {
     elements.flashBtn.classList.add('flashing');
 
     try {
-        showStatus('Starting flash operation...');
-        updateProgress(0, 'Preparing...');
+        showStatus(t('startingFlashOperation'));
+        updateProgress(0, t('preparing'));
 
         const options = {
             usePartialFlash: elements.partialFlash.checked,
@@ -265,17 +265,17 @@ async function startFlash() {
         log('Flashing device...');
         const result = await flashController.flash(hexFileContent, options);
 
-        updateProgress(100, 'Flash complete!');
-        const hint = autoFlashEnabled ? ' Unplug and reconnect next device to flash again.' : '';
-        showStatus(`✓ Device flashed successfully using ${result.method} flash${hint}`);
+        updateProgress(100, t('flashComplete'));
+        const hint = autoFlashEnabled ? t('unplugHint') : '';
+        showStatus(t('flashedSuccessfully').replace('{method}', result.method) + hint);
 
         log('Flash completed successfully');
 
     } catch (error) {
         if (flashController.isAborted()) {
-            showError('Flash operation cancelled');
+            showError(t('flashCancelled'));
         } else {
-            showError(`Flash failed: ${error.message}`);
+            showError(t('flashFailed') + error.message);
         }
         log(`Flash error: ${error.message}`);
         updateProgress(0, '');
@@ -317,7 +317,7 @@ function updatePartialFlashUI() {
     if (usbDevice && usbDevice.isJLink()) {
         elements.partialFlash.checked = false;
         elements.partialFlash.disabled = true;
-        elements.partialFlash.title = 'Calliope mini 2.x: always full flash via J-Link MSD protocol';
+        elements.partialFlash.title = t('partialFlashDisabledTitle');
         log('Partial flash disabled: J-Link MSD always flashes all pages');
     } else {
         elements.partialFlash.checked = true;
@@ -331,13 +331,17 @@ function updatePartialFlashUI() {
  */
 function onConnectionChanged(connected) {
     if (connected) {
-        elements.connectBtn.textContent = '✓ Connected';
+        elements.connectBtnText.dataset.i18n = 'connected';
+        elements.connectBtnText.textContent = t('connected');
         elements.connectBtn.classList.add('connected');
     } else {
-        elements.connectBtn.textContent = 'Connect Device';
+        elements.connectBtnText.dataset.i18n = 'connectDevice';
+        elements.connectBtnText.textContent = t('connectDevice');
         elements.connectBtn.classList.remove('connected');
-        elements.deviceStatus.textContent = 'Not connected';
+        elements.deviceStatus.dataset.i18n = 'notConnected';
+        elements.deviceStatus.textContent = t('notConnected');
         elements.deviceStatus.classList.remove('connected');
+        delete elements.firmwareVersion.dataset.i18n;
         elements.firmwareVersion.textContent = '-';
         flashController = null;
         // Hex selection (custom file or start program) persists across disconnects.
@@ -402,27 +406,29 @@ async function onDeviceAppeared(device) {
     if (isFlashing) return;
     hideMessages();
     try {
-        showStatus('Calliope mini detected — connecting automatically...');
+        showStatus(t('calliopeDetected'));
         await usbDevice.connectToDevice(device);
 
         const info = usbDevice.getDeviceInfo();
+        elements.deviceStatus.removeAttribute('data-i18n');
         elements.deviceStatus.textContent = info.product;
         elements.deviceStatus.classList.add('connected');
 
         flashController = createFlashController(usbDevice);
-        elements.firmwareVersion.textContent = 'Ready';
+        elements.firmwareVersion.dataset.i18n = 'ready';
+        elements.firmwareVersion.textContent = t('ready');
         updatePartialFlashUI();
         if (hexIsStartProgram) await loadHexForDevice();
         updateFlashButton();
 
         if (autoFlashEnabled && hexFileContent) {
-            showStatus('Auto-flash: starting...');
+            showStatus(t('autoFlashStarting'));
             await startFlash();
         } else {
-            showStatus('Device connected automatically. Click "Flash Device" to flash.');
+            showStatus(t('deviceConnectedAuto'));
         }
     } catch (error) {
-        showError(`Auto-connect failed: ${error.message}`);
+        showError(t('autoConnectFailed') + error.message);
         log(`Auto-connect error: ${error.message}`);
     }
 }

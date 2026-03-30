@@ -40,6 +40,7 @@ body {
 
 /* Header */
 header {
+    position: relative;
     background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
     color: white;
     padding: 2rem;
@@ -68,6 +69,33 @@ header h1 {
 .subtitle {
     font-size: 1rem;
     opacity: 0.9;
+}
+
+.lang-select {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 4px;
+    padding: 0.25rem 0.4rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.lang-select:hover {
+    background: rgba(255, 255, 255, 0.35);
+}
+
+.lang-select option {
+    background: var(--primary-color);
+    color: white;
 }
 
 /* Main Content */
