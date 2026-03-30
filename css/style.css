@@ -91,6 +91,14 @@ section {
     background: #fafafa;
 }
 
+/* Load Start Program button - sits below the drop zone */
+.btn-load-start {
+    display: block;
+    width: 100%;
+    margin-top: 0.75rem;
+    font-size: 0.95rem;
+}
+
 .upload-icon {
     color: var(--primary-color);
     margin-bottom: 1rem;

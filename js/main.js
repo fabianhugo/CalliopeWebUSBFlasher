@@ -1,6 +1,7 @@
 // Main application logic - UI and coordination
 
 let hexFileContent = null;
+let hexIsStartProgram = false; // true when hex was auto-loaded as start program (cleared on disconnect)
 let flashController = null;
 let isFlashing = false;
 let autoFlashEnabled = false;
@@ -26,6 +27,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Get UI elements
     elements = {
+        hexFile: document.getElementById('hexFile'),
+        dropZone: document.getElementById('dropZone'),
+        selectFile: document.getElementById('selectFile'),
+        loadStartProgramBtn: document.getElementById('loadStartProgramBtn'),
         fileInfo: document.getElementById('fileInfo'),
         connectBtn: document.getElementById('connectBtn'),
         flashBtn: document.getElementById('flashBtn'),
@@ -61,6 +66,44 @@ document.addEventListener('DOMContentLoaded', () => {
  * Setup event listeners
  */
 function setupEventListeners() {
+    // File selection
+    elements.selectFile.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        elements.hexFile.click();
+    });
+
+    elements.hexFile.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) loadHexFile(e.target.files[0]);
+    });
+
+    // Drag and drop
+    elements.dropZone.addEventListener('dragenter', (e) => { e.preventDefault(); e.stopPropagation(); });
+    elements.dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        elements.dropZone.classList.add('drag-over');
+    });
+    elements.dropZone.addEventListener('dragleave', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        elements.dropZone.classList.remove('drag-over');
+    });
+    elements.dropZone.addEventListener('drop', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        elements.dropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files.length > 0) loadHexFile(e.dataTransfer.files[0]);
+    });
+    document.addEventListener('dragover', (e) => { e.preventDefault(); });
+    document.addEventListener('drop',     (e) => { e.preventDefault(); });
+
+    // Load Start Program button
+    elements.loadStartProgramBtn.addEventListener('click', () => {
+        if (!usbDevice || !usbDevice.isConnected()) {
+            showError('Connect a device first to load the matching start program.');
+            return;
+        }
+        loadHexForDevice();
+    });
+
     // Device connection
     elements.connectBtn.addEventListener('click', connectDevice);
 
@@ -78,15 +121,49 @@ function setupEventListeners() {
 }
 
 /**
+ * Load a user-selected HEX file (drag-drop or file picker).
+ */
+async function loadHexFile(file) {
+    hideMessages();
+    if (!file.name.endsWith('.hex')) {
+        showError('Please select a .hex file');
+        return;
+    }
+    try {
+        showStatus('Loading HEX file...');
+        const text = await file.text();
+        const validation = validateHexFile(text);
+        if (!validation.valid) {
+            showError(`Invalid HEX file: ${validation.error}`);
+            return;
+        }
+        hexFileContent = text;
+        hexIsStartProgram = false;
+        const info = getHexFileInfo(text);
+        elements.fileInfo.innerHTML =
+            `✓ <strong>${file.name}</strong><br>
+            Size: ${formatBytes(info.totalSize)}, Blocks: ${info.blocks}, Range: ${info.startAddress} - ${info.endAddress}`;
+        elements.fileInfo.classList.add('loaded');
+        showStatus('HEX file loaded successfully');
+        updateFlashButton();
+        log(`Loaded ${file.name}: ${formatBytes(info.totalSize)}`);
+    } catch (error) {
+        showError(`Failed to load file: ${error.message}`);
+        log(`File load error: ${error.message}`);
+    }
+}
+
+/**
  * Fetch and load the correct HEX file for the connected device.
  * Selects hex/Demov3.hex for Calliope mini v3 and hex/Demov1.hex for v1/v2.
+ * Only auto-loads on connect when no custom hex is already present.
  */
 async function loadHexForDevice() {
     const path = usbDevice.getHexPath();
     if (!path) return;
 
     try {
-        showStatus(`Loading firmware (${path.split('/').pop()})...`);
+        showStatus(`Loading start program (${path.split('/').pop()})...`);
         const response = await fetch(path);
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const text = await response.text();
@@ -95,6 +172,7 @@ async function loadHexForDevice() {
         if (!validation.valid) throw new Error(`Invalid HEX: ${validation.error}`);
 
         hexFileContent = text;
+        hexIsStartProgram = true;
 
         const info = getHexFileInfo(text);
         const fileName = path.split('/').pop();
@@ -102,12 +180,12 @@ async function loadHexForDevice() {
             `✓ <strong>${fileName}</strong> &mdash; ${formatBytes(info.totalSize)}, ${info.blocks} blocks`;
         elements.fileInfo.classList.add('loaded');
 
-        log(`Firmware loaded: ${fileName} (${formatBytes(info.totalSize)})`);
+        log(`Start program loaded: ${fileName} (${formatBytes(info.totalSize)})`);
         updateFlashButton();
 
     } catch (error) {
-        showError(`Failed to load firmware: ${error.message}`);
-        log(`Firmware load error: ${error.message}`);
+        showError(`Failed to load start program: ${error.message}`);
+        log(`Start program load error: ${error.message}`);
     }
 }
 
@@ -143,8 +221,14 @@ async function connectDevice() {
         log('Device ready for flashing');
 
         updatePartialFlashUI();
-        await loadHexForDevice();
-        showStatus('Device connected. Ready to flash.');
+        if (!hexFileContent) await loadHexForDevice();
+
+        if (autoFlashEnabled && hexFileContent) {
+            showStatus('Auto-flash: starting...');
+            await startFlash();
+        } else {
+            showStatus('Device connected. Ready to flash.');
+        }
 
     } catch (error) {
         showError(`Connection failed: ${error.message}`);
@@ -237,6 +321,7 @@ function updatePartialFlashUI() {
         elements.partialFlash.title = 'Calliope mini 2.x: always full flash via J-Link MSD protocol';
         log('Partial flash disabled: J-Link MSD always flashes all pages');
     } else {
+        elements.partialFlash.checked = true;
         elements.partialFlash.disabled = false;
         elements.partialFlash.title = '';
     }
@@ -256,9 +341,14 @@ function onConnectionChanged(connected) {
         elements.deviceStatus.classList.remove('connected');
         elements.firmwareVersion.textContent = '-';
         flashController = null;
-        hexFileContent = null;
-        elements.fileInfo.textContent = '';
-        elements.fileInfo.classList.remove('loaded');
+        // Only clear the hex if it was the auto-loaded start program.
+        // Custom files loaded by the user are kept across reconnects.
+        if (hexIsStartProgram) {
+            hexFileContent = null;
+            hexIsStartProgram = false;
+            elements.fileInfo.textContent = '';
+            elements.fileInfo.classList.remove('loaded');
+        }
         // Re-enable partial flash checkbox so it's ready for the next device
         elements.partialFlash.disabled = false;
         elements.partialFlash.title = '';
@@ -305,6 +395,7 @@ function hideMessages() {
  */
 function disableUI() {
     elements.selectFile.disabled = true;
+    elements.loadStartProgramBtn.disabled = true;
     elements.connectBtn.disabled = true;
     elements.flashBtn.disabled = true;
     elements.dropZone.style.opacity = '0.5';
@@ -329,7 +420,7 @@ async function onDeviceAppeared(device) {
         flashController = createFlashController(usbDevice);
         elements.firmwareVersion.textContent = 'Ready';
         updatePartialFlashUI();
-        await loadHexForDevice();
+        if (!hexFileContent) await loadHexForDevice();
         updateFlashButton();
 
         if (autoFlashEnabled && hexFileContent) {
