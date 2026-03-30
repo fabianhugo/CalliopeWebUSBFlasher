@@ -44,7 +44,6 @@ document.addEventListener('DOMContentLoaded', () => {
         statusMessage: document.getElementById('statusMessage'),
         errorMessage: document.getElementById('errorMessage'),
         partialFlash: document.getElementById('partialFlash'),
-        verifyFlash: document.getElementById('verifyFlash'),
         autoFlash: document.getElementById('autoFlash')
     };
 
@@ -104,7 +103,7 @@ function setupEventListeners() {
         } else {
             // No device yet — show the default placeholder; actual load happens on connect
             hexFileContent = null;
-            elements.hexLabel.textContent = 'Demov3.hex';
+            elements.hexLabel.textContent = t('startProgramPlaceholder');
             updateFlashButton();
         }
     });
@@ -258,7 +257,6 @@ async function startFlash() {
 
         const options = {
             usePartialFlash: elements.partialFlash.checked,
-            verifyAfterFlash: elements.verifyFlash.checked,
             progressCallback: updateProgress
         };
 

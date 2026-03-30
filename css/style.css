@@ -6,7 +6,7 @@
 }
 
 :root {
-    --primary-color: #249899;
+    --primary-color: #42c9c9;
     --primary-hover: #1d7a7b;
     --secondary-color: #6c757d;
     --success-color: #28a745;
@@ -41,7 +41,7 @@ body {
 /* Header */
 header {
     position: relative;
-    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-hover) 100%);
+    background: var(--primary-color);
     color: white;
     padding: 2rem;
     text-align: center;
@@ -94,8 +94,8 @@ header h1 {
 }
 
 .lang-select option {
-    background: var(--primary-color);
-    color: white;
+    background: #42c9c9;
+    color: #333;
 }
 
 /* Main Content */

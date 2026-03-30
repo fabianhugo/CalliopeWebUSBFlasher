@@ -62,6 +62,7 @@ const TRANSLATIONS = {
         calliopeDetected: 'Calliope mini detected — connecting automatically...',
         deviceConnectedAuto: 'Device connected automatically. Click "Flash Device" to flash.',
         autoConnectFailed: 'Auto-connect failed: ',
+        startProgramPlaceholder: 'Demov1.hex or Demov3.hex',
     },
     de: {
         pageTitle: 'WebUSB-Flasher',
@@ -117,6 +118,7 @@ const TRANSLATIONS = {
         calliopeDetected: 'Calliope mini erkannt — verbinde automatisch...',
         deviceConnectedAuto: 'Gerät automatisch verbunden. „Gerät flashen" klicken.',
         autoConnectFailed: 'Auto-Verbindung fehlgeschlagen: ',
+        startProgramPlaceholder: 'Demov1.hex oder Demov3.hex',
     }
 };
 
