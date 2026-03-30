@@ -378,6 +378,21 @@ class WebUSBDevice {
     }
 
     /**
+     * Returns the path to the hex file that matches the connected hardware version:
+     *   v3  ("Calliope mini V3 CMSIS-DAP")  → hex/Demov3.hex
+     *   v1  ("Calliope mini CMSIS-DAP")      → hex/Demov1.hex
+     *   v2  ("Calliope mini")                → hex/Demov1.hex
+     */
+    getHexPath() {
+        if (!this.device) return null;
+        const product = (this.device.productName || '').trim();
+        if (product === 'Calliope mini V3 CMSIS-DAP') {
+            return 'hex/Demov3.hex';
+        }
+        return 'hex/Demov1.hex';
+    }
+
+    /**
      * Check if a raw USBDevice matches the Calliope mini filters
      */
     isMatchingDevice(device) {

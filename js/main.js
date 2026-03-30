@@ -26,9 +26,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Get UI elements
     elements = {
-        hexFile: document.getElementById('hexFile'),
-        dropZone: document.getElementById('dropZone'),
-        selectFile: document.getElementById('selectFile'),
         fileInfo: document.getElementById('fileInfo'),
         connectBtn: document.getElementById('connectBtn'),
         flashBtn: document.getElementById('flashBtn'),
@@ -64,60 +61,6 @@ document.addEventListener('DOMContentLoaded', () => {
  * Setup event listeners
  */
 function setupEventListeners() {
-    // File selection
-    elements.selectFile.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        log('Select file button clicked');
-        elements.hexFile.click();
-    });
-
-    elements.hexFile.addEventListener('change', (e) => {
-        log('File input changed');
-        if (e.target.files.length > 0) {
-            loadHexFile(e.target.files[0]);
-        }
-    });
-
-    // Drag and drop - prevent default on all drag events
-    elements.dropZone.addEventListener('dragenter', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        log('File drag enter');
-    });
-
-    elements.dropZone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        elements.dropZone.classList.add('drag-over');
-    });
-
-    elements.dropZone.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        elements.dropZone.classList.remove('drag-over');
-    });
-
-    elements.dropZone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        log('File dropped');
-        elements.dropZone.classList.remove('drag-over');
-        
-        if (e.dataTransfer.files.length > 0) {
-            loadHexFile(e.dataTransfer.files[0]);
-        }
-    });
-
-    // Also prevent default on document level to catch any missed events
-    document.addEventListener('dragover', (e) => {
-        e.preventDefault();
-    });
-    
-    document.addEventListener('drop', (e) => {
-        e.preventDefault();
-    });
-
     // Device connection
     elements.connectBtn.addEventListener('click', connectDevice);
 
@@ -135,46 +78,36 @@ function setupEventListeners() {
 }
 
 /**
- * Load HEX file
+ * Fetch and load the correct HEX file for the connected device.
+ * Selects hex/Demov3.hex for Calliope mini v3 and hex/Demov1.hex for v1/v2.
  */
-async function loadHexFile(file) {
-    hideMessages();
-
-    if (!file.name.endsWith('.hex')) {
-        showError('Please select a .hex file');
-        return;
-    }
+async function loadHexForDevice() {
+    const path = usbDevice.getHexPath();
+    if (!path) return;
 
     try {
-        showStatus('Loading HEX file...');
-        
-        const text = await file.text();
-        const validation = validateHexFile(text);
+        showStatus(`Loading firmware (${path.split('/').pop()})...`);
+        const response = await fetch(path);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const text = await response.text();
 
-        if (!validation.valid) {
-            showError(`Invalid HEX file: ${validation.error}`);
-            return;
-        }
+        const validation = validateHexFile(text);
+        if (!validation.valid) throw new Error(`Invalid HEX: ${validation.error}`);
 
         hexFileContent = text;
 
         const info = getHexFileInfo(text);
-        elements.fileInfo.innerHTML = `
-            ✓ <strong>${file.name}</strong><br>
-            Size: ${formatBytes(info.totalSize)}, 
-            Blocks: ${info.blocks}, 
-            Range: ${info.startAddress} - ${info.endAddress}
-        `;
+        const fileName = path.split('/').pop();
+        elements.fileInfo.innerHTML =
+            `✓ <strong>${fileName}</strong> &mdash; ${formatBytes(info.totalSize)}, ${info.blocks} blocks`;
         elements.fileInfo.classList.add('loaded');
 
-        showStatus('HEX file loaded successfully');
+        log(`Firmware loaded: ${fileName} (${formatBytes(info.totalSize)})`);
         updateFlashButton();
 
-        log(`Loaded ${file.name}: ${formatBytes(info.totalSize)}`);
-
     } catch (error) {
-        showError(`Failed to load file: ${error.message}`);
-        log(`File load error: ${error.message}`);
+        showError(`Failed to load firmware: ${error.message}`);
+        log(`Firmware load error: ${error.message}`);
     }
 }
 
@@ -210,8 +143,8 @@ async function connectDevice() {
         log('Device ready for flashing');
 
         updatePartialFlashUI();
-        showStatus('Device connected successfully');
-        updateFlashButton();
+        await loadHexForDevice();
+        showStatus('Device connected. Ready to flash.');
 
     } catch (error) {
         showError(`Connection failed: ${error.message}`);
@@ -323,6 +256,9 @@ function onConnectionChanged(connected) {
         elements.deviceStatus.classList.remove('connected');
         elements.firmwareVersion.textContent = '-';
         flashController = null;
+        hexFileContent = null;
+        elements.fileInfo.textContent = '';
+        elements.fileInfo.classList.remove('loaded');
         // Re-enable partial flash checkbox so it's ready for the next device
         elements.partialFlash.disabled = false;
         elements.partialFlash.title = '';
@@ -393,13 +329,12 @@ async function onDeviceAppeared(device) {
         flashController = createFlashController(usbDevice);
         elements.firmwareVersion.textContent = 'Ready';
         updatePartialFlashUI();
+        await loadHexForDevice();
         updateFlashButton();
 
         if (autoFlashEnabled && hexFileContent) {
             showStatus('Auto-flash: starting...');
             await startFlash();
-        } else if (autoFlashEnabled && !hexFileContent) {
-            showStatus('Device connected. Load a HEX file to enable auto-flash.');
         } else {
             showStatus('Device connected automatically. Click "Flash Device" to flash.');
         }

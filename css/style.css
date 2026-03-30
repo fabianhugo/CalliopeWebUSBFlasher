@@ -82,6 +82,15 @@ section {
     background: #f0fbfb;
 }
 
+/* Firmware auto-selection display */
+.firmware-info {
+    border: 2px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem 2rem;
+    text-align: center;
+    background: #fafafa;
+}
+
 .upload-icon {
     color: var(--primary-color);
     margin-bottom: 1rem;

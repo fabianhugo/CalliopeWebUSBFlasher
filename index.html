@@ -15,17 +15,11 @@
         </header>
 
         <main>
-            <!-- File Upload Section -->
+            <!-- Firmware Info Section -->
             <section class="upload-section">
-                <div class="file-input-wrapper">
-                    <input type="file" id="hexFile" accept=".hex" style="display: none;">
-                    <div id="dropZone" class="drop-zone">
-                        <svg class="upload-icon" viewBox="0 0 24 24" width="48" height="48">
-                            <path fill="currentColor" d="M9,16V10H5L12,3L19,10H15V16H9M5,20V18H19V20H5Z"/>
-                        </svg>
-                        <p class="drop-text">Drop HEX file here or <button type="button" id="selectFile" class="link-button">select file</button></p>
-                        <p class="file-info" id="fileInfo"></p>
-                    </div>
+                <div id="firmwareInfo" class="firmware-info">
+                    <p class="drop-text">Connect a Calliope mini to automatically load the matching firmware</p>
+                    <p class="file-info" id="fileInfo"></p>
                 </div>
             </section>
 
